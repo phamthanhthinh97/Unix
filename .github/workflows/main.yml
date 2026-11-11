@@ -10,42 +10,109 @@ jobs:
     timeout-minutes: 360
 
     steps:
+
+      # 1. Check macOS Environment
       - name: Check macOS Runner
         run: |
+          echo "================================"
           echo "macOS Version:"
           sw_vers
+
+          echo "Architecture:"
+          uname -m
 
           echo "Current User:"
           whoami
 
-          echo "Runner Account:"
-          id runner || true
+          echo "================================"
         shell: bash
 
+      # 2. Enable Screen Sharing
       - name: Enable Screen Sharing
         run: |
-          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist
+          echo "Enabling Screen Sharing..."
+
+          sudo launchctl load -w \
+            /System/Library/LaunchDaemons/com.apple.screensharing.plist
+
+          echo "Screen Sharing enabled."
         shell: bash
 
-      - name: Install Tailscale
+      # 3. Install Tailscale CLI
+      - name: Install Tailscale CLI
         run: |
-          brew install --cask tailscale
+          echo "Installing Tailscale CLI..."
 
-          sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale up \
-            --authkey="${TAILSCALE_AUTH_KEY}" \
-            --hostname="gh-macos-${GITHUB_RUN_ID}"
+          brew install tailscale
+
+          echo "Tailscale version:"
+          tailscale version
+
+          echo "Installation completed."
+        shell: bash
+
+      # 4. Start Tailscale Daemon
+      - name: Start Tailscale Daemon
+        run: |
+          echo "Starting Tailscale daemon..."
+
+          sudo brew services start tailscale
+
+          echo "Waiting for daemon..."
+
+          for i in {1..30}; do
+            if sudo tailscale status >/dev/null 2>&1; then
+              echo "Tailscale daemon is responding."
+              break
+            fi
+
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+          if ! pgrep -x tailscaled >/dev/null; then
+            echo "ERROR: Tailscale daemon is not running."
+            brew services list
+            exit 1
+          fi
+        shell: bash
+
+      # 5. Connect Tailscale
+      - name: Connect Tailscale
         env:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          echo "Connecting to Tailscale..."
+
+          sudo tailscale up \
+            --authkey="${TAILSCALE_AUTH_KEY}" \
+            --hostname="gh-macos-${GITHUB_RUN_ID}"
+
+          echo "Tailscale connected!"
+          sudo tailscale status
         shell: bash
 
+      # 6. Get Tailscale IP
       - name: Get Tailscale IP
         run: |
-          TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-
-          TS_IP=$($TS ip -4)
+          TS_IP=$(sudo tailscale ip -4)
 
           echo "================================"
-          echo "Tailscale VNC Address: vnc://$TS_IP"
+          echo "MACOS REMOTE ACCESS"
+          echo "================================"
+          echo "Tailscale IP: $TS_IP"
+          echo "VNC Address: vnc://$TS_IP"
+          echo "================================"
+
+          echo "TS_IP=$TS_IP" >> $GITHUB_ENV
+        shell: bash
+
+      # 7. Keep Runner Alive
+      - name: Keep Connection Alive
+        run: |
+          echo "================================"
+          echo "macOS runner is ready!"
+          echo "Waiting for remote connection..."
           echo "================================"
 
           while true; do
