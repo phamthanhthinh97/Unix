@@ -1,0 +1,54 @@
+name: macOS Remote via Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-macos-remote:
+    runs-on: macos-14
+    timeout-minutes: 3600
+
+    steps:
+      - name: Enable Screen Sharing / VNC
+        run: |
+          # Kích hoạt dịch vụ chia sẻ màn hình trên macOS
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist
+          
+          # Tạo tài khoản truy cập từ xa mới
+          USER_NAME="runner"
+          USER_PASS="SecurePassword123!"
+          
+          sudo dscl . -create /Users/$USER_NAME
+          sudo dscl . -create /Users/$USER_NAME UserShell /bin/bash
+          sudo dscl . -create /Users/$USER_NAME RealName "Remote Runner"
+          sudo dscl . -create /Users/$USER_NAME UniqueID 501
+          sudo dscl . -create /Users/$USER_NAME PrimaryGroupID 20
+          sudo dscl . -create /Users/$USER_NAME NFSHomeDirectory /Users/$USER_NAME
+          sudo mkdir -p /Users/$USER_NAME
+          sudo chown $USER_NAME:staff /Users/$USER_NAME
+          sudo dscl . -passwd /Users/$USER_NAME $USER_PASS
+          sudo dscl . -append /Groups/admin GroupMembership $USER_NAME
+          
+          echo "MACOS_CREDS=User: $USER_NAME | Password: $USER_PASS" >> $env:GITHUB_ENV # Hoặc dùng cú pháp $GITHUB_ENV của bash
+        shell: bash
+
+      - name: Install Tailscale on macOS
+        run: |
+          brew install --cask tailscale
+          # Khởi động dịch vụ Tailscale daemon
+          sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-macos-$env:GITHUB_RUN_ID
+        shell: bash
+
+      - name: Get Tailscale IP and Maintain Connection
+        run: |
+          TS_IP=$(tailscale ip -4)
+          echo "================================"
+          echo "Tailscale VNC Address: vnc://$TS_IP"
+          echo "Username: runner"
+          echo "Password: SecurePassword123!"
+          echo "================================"
+          
+          while true; do
+              sleep 300
+          done
+        shell: bash
