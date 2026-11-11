@@ -1,3 +1,4 @@
+
 name: macOS Remote via Tailscale
 
 on:
@@ -5,45 +6,49 @@ on:
 
 jobs:
   secure-macos-remote:
-    runs-on: macos-14  # Đã sửa lại nhãn chuẩn tại đây
-    timeout-minutes: 3600
+    runs-on: macos-15
+    timeout-minutes: 360
 
     steps:
-      - name: Enable Screen Sharing / VNC
+      - name: Check macOS Runner
+        run: |
+          echo "macOS Version:"
+          sw_vers
+
+          echo "Current User:"
+          whoami
+
+          echo "Runner Account:"
+          id runner || true
+        shell: bash
+
+      - name: Enable Screen Sharing
         run: |
           sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist
-          
-          USER_NAME="runner"
-          USER_PASS="SecurePassword123!"
-          
-          sudo dscl . -create /Users/$USER_NAME
-          sudo dscl . -create /Users/$USER_NAME UserShell /bin/bash
-          sudo dscl . -create /Users/$USER_NAME RealName "Remote Runner"
-          sudo dscl . -create /Users/$USER_NAME UniqueID 501
-          sudo dscl . -create /Users/$USER_NAME PrimaryGroupID 20
-          sudo dscl . -create /Users/$USER_NAME NFSHomeDirectory /Users/$USER_NAME
-          sudo mkdir -p /Users/$USER_NAME
-          sudo chown $USER_NAME:staff /Users/$USER_NAME
-          sudo dscl . -passwd /Users/$USER_NAME $USER_PASS
-          sudo dscl . -append /Groups/admin GroupMembership $USER_NAME
         shell: bash
 
-      - name: Install Tailscale on macOS
+      - name: Install Tailscale
         run: |
           brew install --cask tailscale
-          sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-macos-$env:GITHUB_RUN_ID
+
+          sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale up \
+            --authkey="${TAILSCALE_AUTH_KEY}" \
+            --hostname="gh-macos-${GITHUB_RUN_ID}"
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         shell: bash
 
-      - name: Get Tailscale IP and Maintain Connection
+      - name: Get Tailscale IP
         run: |
-          TS_IP=$(tailscale ip -4)
+          TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+          TS_IP=$($TS ip -4)
+
           echo "================================"
           echo "Tailscale VNC Address: vnc://$TS_IP"
-          echo "Username: runner"
-          echo "Password: SecurePassword123!"
           echo "================================"
-          
+
           while true; do
-              sleep 300
+            sleep 300
           done
         shell: bash
